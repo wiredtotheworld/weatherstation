@@ -1106,7 +1106,7 @@ function buildCharts(data) {
   });
 
   mkChart('gdd-chart',{type:'line',data:{labels:labels,datasets:[
-    {label:'GDD Base 0\u00b0C',data:daily.map(function(d){return d.cum_gdd5+(d.tmean>0?d.tmean:0);}),borderColor:'#a83220',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false},
+    {label:'GDD Base 0\u00b0C',data:daily.map(function(d){return d.cum_gdd0 || d.cum_gdd5+(d.tmean>0?d.tmean:0);}),borderColor:'#a83220',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false},
     {label:'GDD Base 5\u00b0C',data:daily.map(function(d){return d.cum_gdd5;}),borderColor:'#1a7a58',borderWidth:3,pointRadius:0,tension:0.3,fill:false}
   ]},options:{responsive:true,maintainAspectRatio:false,
     plugins:{legend:{display:true,labels:{color:tickC(),font:{size:11},boxWidth:24,boxHeight:1}},
@@ -1196,34 +1196,53 @@ function drawWindRose(wind) {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
-async function init() {
+function xhrGet(url, cb) {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', url, true);
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4) {
+      if (xhr.status === 200) {
+        try { cb(null, JSON.parse(xhr.responseText)); } catch(e) { cb(e, null); }
+      } else {
+        cb(new Error('HTTP ' + xhr.status), null);
+      }
+    }
+  };
+  xhr.send();
+}
+
+function init() {
   buildNav();
 
-  try { var ir = await fetch('/api/images'); IMGS = await ir.json(); } catch(e){ IMGS=[]; }
+  xhrGet('/api/images', function(err, imgs) {
+    if (!err && imgs) IMGS = imgs;
 
-  var data;
-  try { var r = await fetch('/api/data'); data = await r.json(); } catch(e){ return; }
-  if (data.error) return;
+    xhrGet('/api/data', function(err2, data) {
+      if (err2 || !data || data.error) return;
 
-  DATA = data;
-  buildCharts(data);
+      DATA = data;
+      buildCharts(data);
 
-  if (IMGS.length) {
-    var img = document.getElementById('header-photo');
-    img.src = IMGS[Math.floor(Math.random()*IMGS.length)];
-    img.onload = function(){ img.classList.add('loaded'); };
-  }
+      if (IMGS.length) {
+        var img = document.getElementById('header-photo');
+        img.src = IMGS[Math.floor(Math.random() * IMGS.length)];
+        img.onload = function() { img.classList.add('loaded'); };
+      }
 
-  var loader = document.getElementById('loading');
-  loader.style.opacity = '0';
-  setTimeout(function(){
-    loader.style.display = 'none';
-    document.querySelector('.slide').classList.add('active');
-    startProgress();
-  }, 900);
+      var loader = document.getElementById('loading');
+      loader.style.opacity = '0';
+      setTimeout(function() {
+        loader.style.display = 'none';
+        document.querySelector('.slide').classList.add('active');
+        startProgress();
+      }, 900);
+    });
+  });
 
-  setInterval(async function(){
-    try { var r=await fetch('/api/data'); var d=await r.json(); if(!d.error){DATA=d;buildCharts(d);} } catch(e){}
+  setInterval(function() {
+    xhrGet('/api/data', function(err, d) {
+      if (!err && d && !d.error) { DATA = d; buildCharts(d); }
+    });
   }, 300000);
 }
 
