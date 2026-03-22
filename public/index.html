@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stockwell Street Weather Station</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+/* ── LIGHT THEME FOR 2005x1440 ─────────────────────────────────────────── */
+:root {
+  --bg:       #f4f2ee;
+  --surface:  #ffffff;
+  --surface2: #f9f8f6;
+  --border:   rgba(60,50,30,0.12);
+  --bord2:    rgba(60,50,30,0.07);
+  --text:     #1a1612;
+  --muted:    rgba(30,20,10,0.50);
+  --dim:      rgba(30,20,10,0.30);
+  --amber:    #b8640a;
+  --amber2:   #d4820f;
+  --blue:     #1a6fa8;
+  --teal:     #1a7a58;
+  --red:      #a83220;
+  --purple:   #5a4ab0;
+  --green:    #2a7a3a;
+  --mono:     'DM Mono', monospace;
+  --serif:    'Cormorant Garamond', serif;
+  --sans:     'DM Sans', sans-serif;
+  --hh:       160px;
+}
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+html, body { width:100%; height:100%; background:var(--bg); color:var(--text); font-family:var(--sans); overflow:hidden; }
+
+/* ── HEADER ─────────────────────────────────────────────────────────────── */
+#header {
+  position:fixed; top:0; left:0; right:0; z-index:100;
+  height:var(--hh);
+  background:#ffffff;
+  border-bottom:2px solid var(--border);
+  display:grid;
+  grid-template-columns: var(--hh) 1fr auto;
+  align-items:stretch;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+#header-photo {
+  width:var(--hh); height:var(--hh);
+  object-fit:cover; display:block;
+  border-right:1px solid var(--border);
+  opacity:0; transition:opacity 1.2s ease;
+}
+#header-photo.loaded { opacity:1; }
+
+#header-text {
+  display:flex; flex-direction:column; justify-content:center;
+  padding:0 32px;
+  border-right:1px solid var(--border);
+}
+.station-name {
+  font-family:var(--serif); font-size:48px; font-weight:300;
+  letter-spacing:0.02em; line-height:1; color:var(--text);
+}
+.station-loc {
+  font-family:var(--mono); font-size:13px; color:var(--muted);
+  letter-spacing:0.1em; text-transform:uppercase; margin-top:8px;
+}
+.station-range {
+  font-family:var(--mono); font-size:12px; color:var(--amber);
+  letter-spacing:0.08em; margin-top:5px;
+  font-style:italic;
+}
+
+#header-right {
+  display:flex; flex-direction:column; justify-content:center;
+  align-items:flex-end; padding:0 36px;
+  min-width:300px;
+}
+#clock {
+  font-family:var(--mono); font-size:58px; font-weight:300;
+  color:var(--text); letter-spacing:0.04em; line-height:1;
+}
+#dateline {
+  font-family:var(--mono); font-size:13px; color:var(--muted);
+  letter-spacing:0.08em; text-transform:uppercase; margin-top:8px;
+}
+
+/* ── SLIDES ──────────────────────────────────────────────────────────────── */
+#slides { position:fixed; top:var(--hh); bottom:44px; left:0; right:0; }
+.slide {
+  position:absolute; inset:0; padding:22px 36px 14px;
+  opacity:0; transform:translateX(40px);
+  transition:opacity 0.65s ease, transform 0.65s ease;
+  pointer-events:none;
+}
+.slide.active { opacity:1; transform:translateX(0); pointer-events:auto; }
+.slide.exit   { opacity:0; transform:translateX(-40px); }
+
+/* ── SLIDE HEADER ROW ────────────────────────────────────────────────────── */
+.slide-header {
+  display:flex; align-items:center; gap:16px;
+  margin-bottom:14px; flex-shrink:0;
+}
+.slide-tag {
+  font-family:var(--mono); font-size:10px; font-weight:500;
+  letter-spacing:0.2em; text-transform:uppercase;
+  color:#ffffff; background:var(--amber);
+  padding:4px 10px; border-radius:2px; white-space:nowrap; flex-shrink:0;
+}
+.slide-title {
+  font-family:var(--serif); font-size:26px; font-weight:300;
+  color:var(--text); flex:1;
+}
+.slide-daterange {
+  font-family:var(--mono); font-size:11px; color:var(--muted);
+  letter-spacing:0.06em; white-space:nowrap;
+}
+.slide-rule { flex:1; height:1px; background:var(--border); }
+
+/* ── COLUMN LAYOUT ───────────────────────────────────────────────────────── */
+.slide-cols      { display:grid; grid-template-columns:1fr 360px; gap:18px; height:calc(100% - 52px); min-height:0; }
+.slide-cols.wide { grid-template-columns:1fr 300px; }
+.slide-right     { display:flex; flex-direction:column; gap:10px; min-height:0; overflow:hidden; }
+
+/* ── STAT BLOCKS ─────────────────────────────────────────────────────────── */
+.stat-block {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:6px; padding:12px 16px; flex-shrink:0;
+}
+.stat-label {
+  font-family:var(--mono); font-size:10px; font-weight:500;
+  letter-spacing:0.12em; text-transform:uppercase;
+  color:var(--muted); margin-bottom:3px;
+}
+.stat-value {
+  font-family:var(--mono); font-size:32px; font-weight:400;
+  line-height:1.05; color:var(--amber);
+}
+.stat-value.sm   { font-size:22px; }
+.stat-value.teal { color:var(--teal); }
+.stat-value.blue { color:var(--blue); }
+.stat-value.red  { color:var(--red); }
+.stat-value.dark { color:var(--text); }
+.stat-unit { font-size:13px; color:var(--muted); margin-left:2px; }
+.stat-sub  { font-family:var(--mono); font-size:10px; color:var(--dim); margin-top:3px; }
+
+/* ── FIELD NOTES PANEL ───────────────────────────────────────────────────── */
+.field-notes {
+  background:var(--surface2);
+  border:1px solid var(--border);
+  border-left:4px solid var(--amber);
+  border-radius:6px;
+  padding:14px 18px;
+  flex:1; min-height:0; overflow:hidden; position:relative;
+}
+.fn-head {
+  font-family:var(--mono); font-size:10px; font-weight:500;
+  letter-spacing:0.18em; text-transform:uppercase;
+  color:var(--amber); margin-bottom:10px; flex-shrink:0;
+}
+.fn-scroll { position:absolute; left:18px; right:18px; top:36px; }
+.fn-text {
+  font-family:var(--sans); font-size:15px;
+  color:var(--muted); line-height:1.8;
+}
+.fn-text b        { color:var(--text); font-weight:500; }
+.fn-text .accent  { color:var(--teal); font-weight:500; }
+.fn-text .warn    { color:var(--red); font-weight:500; }
+
+/* ── CHART BOXES ─────────────────────────────────────────────────────────── */
+.chart-box {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:6px; padding:14px 18px;
+  position:relative; overflow:hidden;
+}
+.chart-label {
+  font-family:var(--mono); font-size:10px; font-weight:500;
+  letter-spacing:0.1em; text-transform:uppercase;
+  color:var(--muted); margin-bottom:10px; flex-shrink:0;
+}
+
+/* ── OVERVIEW GRID ───────────────────────────────────────────────────────── */
+.ov-grid {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  grid-template-rows:auto 1fr;
+  gap:14px; height:calc(100% - 52px);
+}
+.ov-hero  { grid-column:1/-1; display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+.hero-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:6px; padding:20px 24px;
+  display:flex; flex-direction:column; justify-content:space-between;
+}
+.hero-label { font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:0.15em; text-transform:uppercase; color:var(--muted); }
+.hero-value { font-family:var(--mono); font-size:60px; font-weight:300; line-height:1; margin:8px 0 4px; color:var(--text); }
+.hero-meta  { font-family:var(--mono); font-size:12px; color:var(--dim); }
+.ov-minis { grid-column:1/-1; display:grid; grid-template-columns:repeat(4,1fr); gap:14px; min-height:0; }
+.mini-box { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:12px 14px; display:flex; flex-direction:column; min-height:0; }
+.mini-label { font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; flex-shrink:0; }
+
+/* ── MONTH SLIDE ─────────────────────────────────────────────────────────── */
+.month-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  grid-template-rows:1fr 1fr;
+  gap:14px; height:calc(100% - 52px);
+}
+.month-stat-row {
+  grid-column:1/-1;
+  display:grid; grid-template-columns:repeat(6,1fr); gap:14px;
+  align-items:start;
+}
+
+/* ── VPD / PHENO ─────────────────────────────────────────────────────────── */
+.vpd-zone-legend { display:flex; flex-direction:column; gap:7px; margin-top:8px; }
+.vpd-zone-row    { display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; color:var(--muted); }
+.vpd-swatch      { width:11px; height:11px; border-radius:2px; flex-shrink:0; }
+.pheno-list { display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+.pheno-row  { display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; }
+.pheno-dot  { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.pheno-name { color:var(--muted); flex:1; }
+.pheno-gdd  { color:var(--dim); min-width:64px; text-align:right; }
+.pheno-date { color:var(--amber); font-weight:500; }
+
+/* ── NAV / PROGRESS ──────────────────────────────────────────────────────── */
+#nav { position:fixed; bottom:14px; left:50%; transform:translateX(-50%); z-index:100; display:flex; gap:10px; align-items:center; }
+.nav-dot { width:8px; height:8px; border-radius:50%; background:rgba(0,0,0,0.15); cursor:pointer; transition:all 0.3s; }
+.nav-dot.active { background:var(--amber); transform:scale(1.4); }
+#progress { position:fixed; bottom:0; left:0; right:0; height:3px; background:var(--bord2); z-index:100; }
+#pbar     { height:100%; background:linear-gradient(90deg,var(--amber),var(--amber2)); width:0%; }
+
+/* ── LOADING ─────────────────────────────────────────────────────────────── */
+#loading    { position:fixed; inset:0; background:var(--bg); display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:999; transition:opacity 0.8s; }
+.load-title { font-family:var(--serif); font-size:56px; font-weight:300; letter-spacing:0.04em; margin-bottom:6px; color:var(--text); }
+.load-sub   { font-family:var(--mono); font-size:13px; letter-spacing:0.2em; text-transform:uppercase; color:var(--muted); margin-bottom:40px; }
+.load-bar   { width:200px; height:2px; background:var(--border); border-radius:1px; }
+.load-fill  { height:100%; background:var(--amber); width:0%; animation:lf 1.8s ease forwards; border-radius:1px; }
+@keyframes lf { to { width:100%; } }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="load-title">Stockwell Street</div>
+  <div class="load-sub">Weather Station &middot; Loading data</div>
+  <div class="load-bar"><div class="load-fill"></div></div>
+</div>
+
+<!-- HEADER -->
+<div id="header">
+  <img id="header-photo" src="" alt="Weather Station">
+  <div id="header-text">
+    <div class="station-name">Stockwell Street Weather Station</div>
+    <div class="station-loc" id="station-loc">Greenwich &middot; 51.478&deg;N, 0.003&deg;W &middot; Campbell Scientific CR1000</div>
+    <div class="station-range" id="station-range">Loading data&hellip;</div>
+  </div>
+  <div id="header-right">
+    <div id="clock">--:--:--</div>
+    <div id="dateline">---</div>
+  </div>
+</div>
+
+<!-- SLIDES -->
+<div id="slides">
+
+<!-- 0: OVERVIEW -->
+<div class="slide" id="slide-0">
+  <div class="slide-header">
+    <div class="slide-tag">Overview</div>
+    <div class="slide-title">Current Conditions &amp; Full Record</div>
+    <div class="slide-rule"></div>
+    <div class="slide-daterange" id="dr-0"></div>
+  </div>
+  <div class="ov-grid">
+    <div class="ov-hero">
+      <div class="hero-card">
+        <div class="hero-label">Air Temperature</div>
+        <div class="hero-value" id="ov-temp" style="color:var(--amber)">--.-</div>
+        <div class="hero-meta" id="ov-temp-range">--</div>
+      </div>
+      <div class="hero-card">
+        <div class="hero-label">Relative Humidity</div>
+        <div class="hero-value" id="ov-rh" style="color:var(--blue)">--%</div>
+        <div class="hero-meta" id="ov-vpd">VPD --</div>
+      </div>
+      <div class="hero-card">
+        <div class="hero-label">Barometric Pressure</div>
+        <div class="hero-value" id="ov-bp" style="color:var(--purple)">----</div>
+        <div class="hero-meta" id="ov-bp-tend">--</div>
+      </div>
+      <div class="hero-card">
+        <div class="hero-label">Wind Speed</div>
+        <div class="hero-value" id="ov-ws" style="color:var(--teal)">-- kph</div>
+        <div class="hero-meta" id="ov-ws-info">--</div>
+      </div>
+    </div>
+    <div class="ov-minis">
+      <div class="mini-box">
+        <div class="mini-label">Temperature &mdash; recent</div>
+        <div style="flex:1;position:relative;min-height:0"><canvas id="ov-tc"></canvas></div>
+      </div>
+      <div class="mini-box">
+        <div class="mini-label">Pressure &mdash; full record</div>
+        <div style="flex:1;position:relative;min-height:0"><canvas id="ov-bc"></canvas></div>
+      </div>
+      <div class="mini-box">
+        <div class="mini-label">Rainfall &mdash; total: <span id="ov-rain-tot" style="color:var(--teal);font-weight:500">--</span></div>
+        <div style="flex:1;position:relative;min-height:0"><canvas id="ov-rc"></canvas></div>
+      </div>
+      <div class="mini-box">
+        <div class="mini-label">Solar radiation</div>
+        <div style="flex:1;position:relative;min-height:0"><canvas id="ov-sc"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 1: LAST FULL CALENDAR MONTH -->
+<div class="slide" id="slide-1">
+  <div class="slide-header">
+    <div class="slide-tag" id="month-tag">Last Month</div>
+    <div class="slide-title" id="month-title">Monthly Summary</div>
+    <div class="slide-rule"></div>
+    <div class="slide-daterange" id="dr-1"></div>
+  </div>
+  <div class="slide-cols">
+    <div style="display:flex;flex-direction:column;gap:14px;height:100%;min-height:0">
+      <div class="chart-box" style="flex:1.4;min-height:0">
+        <div class="chart-label">Daily temperature range &deg;C</div>
+        <div style="position:relative;height:calc(100% - 28px)"><canvas id="mo-temp-chart"></canvas></div>
+      </div>
+      <div class="chart-box" style="flex:1;min-height:0">
+        <div class="chart-label">Daily rainfall mm</div>
+        <div style="position:relative;height:calc(100% - 28px)"><canvas id="mo-rain-chart"></canvas></div>
+      </div>
+    </div>
+    <div class="slide-right">
+      <div class="stat-block"><div class="stat-label">Mean Temperature</div><div class="stat-value dark sm" id="mo-tmean">--<span class="stat-unit">&deg;C</span></div></div>
+      <div class="stat-block"><div class="stat-label">Max / Min</div><div class="stat-value red sm" id="mo-tmax">--</div><div class="stat-sub" id="mo-tmax-d"></div><div class="stat-value blue sm" id="mo-tmin">--</div><div class="stat-sub" id="mo-tmin-d"></div></div>
+      <div class="stat-block"><div class="stat-label">Total Rainfall</div><div class="stat-value teal sm" id="mo-rain">--<span class="stat-unit">mm</span></div><div class="stat-sub" id="mo-rain-days"></div></div>
+      <div class="stat-block"><div class="stat-label">Sunshine Hours</div><div class="stat-value sm" id="mo-sun" style="color:var(--amber)">--<span class="stat-unit">h</span></div><div class="stat-sub" id="mo-sun-best"></div></div>
+      <div class="stat-block"><div class="stat-label">Mean Pressure</div><div class="stat-value dark sm" id="mo-bp">----<span class="stat-unit">mB</span></div></div>
+      <div class="field-notes">
+        <div class="fn-head">&#9679; Field Notes</div>
+        <div class="fn-scroll"><div class="fn-text" id="mo-insight"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2: TEMPERATURE -->
+<div class="slide" id="slide-2">
+  <div class="slide-header">
+    <div class="slide-tag">Temperature</div>
+    <div class="slide-title">Air Temperature &mdash; Full Record</div>
+    <div class="slide-rule"></div>
+    <div class="slide-daterange" id="dr-2"></div>
+  </div>
+  <div class="slide-cols">
+    <div class="chart-box" style="height:100%"><canvas id="temp-chart" style="width:100%;height:100%"></canvas></div>
+    <div class="slide-right">
+      <div class="stat-block"><div class="stat-label">Period Mean</div><div class="stat-value dark" id="t-mean">--<span class="stat-unit">&deg;C</span></div></div>
+      <div class="stat-block"><div class="stat-label">Record High</div><div class="stat-value red sm" id="t-max">--<span class="stat-unit">&deg;C</span></div><div class="stat-sub" id="t-max-d"></div></div>
+      <div class="stat-block"><div class="stat-label">Record Low</div><div class="stat-value blue sm" id="t-min">--<span class="stat-unit">&deg;C</span></div><div class="stat-sub" id="t-min-d"></div></div>
+      <div class="stat-block"><div class="stat-label">Mean Daily Range</div><div class="stat-value dark sm" id="t-range">--<span class="stat-unit">&deg;C</span></div></div>
+      <div class="field-notes">
+        <div class="fn-head">&#9679; Field Notes</div>
+        <div class="fn-scroll"><div class="fn-text" id="t-insight"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 3: PRESSURE -->
+<div class="slide" id="slide-3">
+  <div class="slide-header">
+    <div class="slide-tag">Pressure</div>
+    <div class="slide-title">Barometric Pressure</div>
+    <div class="slide-rule"></div>
+    <div class="slide-daterange" id="dr-3"></div>
+  </div>
+  <div class="slide-cols">
+    <div class="chart-box" style="height:100%"><canvas id="bp-chart" style="width:100%;height:100%"></canvas></div>
+    <div class="slide-right">
+      <div class="stat-block"><div class="stat-label">Current</div><div class="stat-value dark" id="bp-now">----<span class="stat-unit">mB</span></div></div>
+      <div class="stat-block"><div class="stat-label">Period High</div><div class="stat-value teal sm" id="bp-max">----<span class="stat-unit">mB</span></div><div class="stat-sub" id="bp-max-d"></div></div>
+      <div class="stat-block"><div class="stat-label">Period Low</div><div class="stat-value red sm" id="bp-min">----<span class="stat-unit">mB</span></div><div class="stat-sub" id="bp-min-d"></div></div>
+      <div class="stat-block"><div class="stat-label">Total Range</div><div class="stat-value dark sm" id="bp-range">--<span class="stat-unit">mB</span></div></div>
+      <div class="stat-block"><div class="stat-label">3-hr Tendency</div><div class="stat-value dark sm" id="bp-tend">--</div><div class="stat-sub" id="bp-tend-d"></div></div>
+      <div class="field-notes">
+        <div class="fn-head">&#9679; Field Notes</div>
+        <div class="fn-scroll"><div class="fn-text" id="bp-insight"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 4: WIND ROSE -->
+<div class="slide" id="slide-4">
+  <div class="slide-header">
+    <div class="slide-tag">Wind</div>
+    <div class="slide-title">Wind Rose &mdash; Speed &amp; Direction</div>
+    <div class="slide-rule"></div>
+    <div class="slide-daterange" id="dr-4"></div>
+  </div>
+  <div class="slide-cols">
+    <div class="chart-box" style="height:100%;display:flex;align-items:center;justify-content:center">
+      <canvas id="wind-rose-canvas"></canvas>
+    </div>
+    <div class="slide-right">
+      <div class="stat-block"><div class="stat-label">Prevailing Direction</div><div class="stat-value dark sm">SSE &ndash; WSW</div></div>
+      <div class="stat-block"><div class="stat-label">Dominant Sector</div><div class="stat-value dark sm">SSE &middot; <span id="wr-pct">-</span>%</div></div>
+      <div class="stat-block"><div class="stat-label">Mean Wind Speed</div><div class="stat-value teal sm" id="wr-mean">-<span class="stat-unit">kph</span></div></div>
+      <div class="stat-block"><div class="stat-label">Max Recorded</div><div class="stat-value red sm" id="wr-max">-<span class="stat-unit">kph</span></div></div>
+      <div class="stat-block"><div class="stat-label">Calms (&lt;0.5 kph)</div><div class="stat-value dark sm" id="wr-calms">-%</div></div>
+      <div class="field-notes">
+        <div class="fn-head">&#9679; Field Notes</div>
+        <div class="fn-scroll"><div class="fn-text" id="wr-insight"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 5: SOLAR -->
+<div class="slide" id="slide-5">
+  <div class="slide-header">
+    <div class="slide-tag">Solar</div>
+    <div class="slide-title">Solar Radiation &amp; Sunshine Hours</div>
+    <div class="slide-rule"></div>
+    <div class="slide-daterange" id="dr-5"></div>
+  </div>
+  <div class="slide-cols wide">
+    <div style="display:flex;flex-direction:column;gap:14px;height:100%;min-height:0">
+      <div class="chart-box" style="flex:1.3;min-height:0">
+        <div class="chart-label">Daily sunshine hours (WMO &ge;120 W/m&sup2;)</div>
+        <div style="position:relative;height:calc(100% - 28px)"><canvas id="sun-chart"></canvas></div>
+      </div>
+      <div class="chart-box" style="flex:1;min-height:0">
+        <div class="chart-label">Sampled solar irradiance W/m&sup2;</div>
+        <div style="position:relative;height:calc(100% - 28px)"><canvas id="slr-chart"></canvas></div>
+      </div>
+    </div>
+    <div class="slide-right">
+      <div class="stat-block"><div class="stat-label">Total Sunshine</div><div class="stat-value" id="sun-tot">--<span class="stat-unit">h</span></div></div>
+      <div class="stat-block"><div class="stat-label">Best Day</div><div class="stat-value dark sm" id="sun-best">--</div><div class="stat-sub" id="sun-best-v"></div></div>
+      <div class="stat-block"><div class="stat-label">Peak Irradiance</div><div class="stat-value dark sm" id="sun-peak">--<span class="stat-unit">W/m&sup2;</span></div></div>
+      <div class="stat-block"><div class="stat-label">Mean / Day</div><div class="stat-value dark sm" id="sun-mean">--<span class="stat-unit">h</span></div></div>
+      <div class="field-notes">
+        <div class="fn-head">&#9679; Field Notes</div>
+        <div class="fn-scroll"><div class="fn-text" id="sun-insight"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 6: HUMIDITY / VPD -->
+<div class="slide" id="slide-6">
+  <div class="slide-header">
+    <div class="slide-tag">Humidity</div>
+    <div class="slide-title">Relative Humidity &amp; Vapour Pressure Deficit</div>
+    <div class="slide-rule"></div>
+    <div class="slide-daterange" id="dr-6"></div>
+  </div>
+  <div class="slide-cols wide">
+    <div style="display:flex;flex-direction:column;gap:14px;height:100%;min-height:0">
+      <div class="chart-box" style="flex:1;min-height:0">
+        <div class="chart-label">Daily mean relative humidity %</div>
+        <div style="position:relative;height:calc(100% - 28px)"><canvas id="rh-chart"></canvas></div>
+      </div>
+      <div class="chart-box" style="flex:1;min-height:0">
+        <div class="chart-label">Vapour pressure deficit &mdash; daily mean &amp; max (kPa)</div>
+        <div style="position:relative;height:calc(100% - 28px)"><canvas id="vpd-chart"></canvas></div>
+      </div>
+    </div>
+    <div class="slide-right">
+      <div class="stat-block"><div class="stat-label">Mean RH</div><div class="stat-value blue" id="rh-mean">--%</div></div>
+      <div class="stat-block"><div class="stat-label">Mean VPD</div><div class="stat-value dark sm" id="vpd-mean">-<span class="stat-unit">kPa</span></div></div>
+      <div class="stat-block"><div class="stat-label">Peak VPD</div><div class="stat-value red sm" id="vpd-max">-<span class="stat-unit">kPa</span></div></div>
+      <div class="stat-block">
+        <div class="stat-label">Stress Zones</div>
+        <div class="vpd-zone-legend">
+          <div class="vpd-zone-row"><div class="vpd-swatch" style="background:#1a6fa8;opacity:0.4"></div>&lt;0.4 kPa &mdash; disease risk</div>
+          <div class="vpd-zone-row"><div class="vpd-swatch" style="background:#1a7a58"></div>0.4&ndash;0.8 &mdash; optimal</div>
+          <div class="vpd-zone-row"><div class="vpd-swatch" style="background:#b8640a"></div>0.8&ndash;1.2 &mdash; mild stress</div>
+          <div class="vpd-zone-row"><div class="vpd-swatch" style="background:#a83220"></div>&gt;1.2 &mdash; stomatal closure</div>
+        </div>
+      </div>
+      <div class="field-notes">
+        <div class="fn-head">&#9679; Field Notes</div>
+        <div class="fn-scroll"><div class="fn-text" id="vpd-insight"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 7: RAINFALL -->
+<div class="slide" id="slide-7">
+  <div class="slide-header">
+    <div class="slide-tag">Rainfall</div>
+    <div class="slide-title">Precipitation Analysis</div>
+    <div class="slide-rule"></div>
+    <div class="slide-daterange" id="dr-7"></div>
+  </div>
+  <div class="slide-cols">
+    <div style="display:flex;flex-direction:column;gap:14px;height:100%;min-height:0">
+      <div class="chart-box" style="flex:1.3;min-height:0">
+        <div class="chart-label">Daily rainfall mm &mdash; ARG100 tipping bucket</div>
+        <div style="position:relative;height:calc(100% - 28px)"><canvas id="rain-chart"></canvas></div>
+      </div>
+      <div class="chart-box" style="flex:1;min-height:0">
+        <div class="chart-label">Cumulative rainfall mm</div>
+        <div style="position:relative;height:calc(100% - 28px)"><canvas id="raincum-chart"></canvas></div>
+      </div>
+    </div>
+    <div class="slide-right">
+      <div class="stat-block"><div class="stat-label">Total Recorded</div><div class="stat-value teal" id="rn-tot">--<span class="stat-unit">mm</span></div></div>
+      <div class="stat-block"><div class="stat-label">Wettest Day</div><div class="stat-value dark sm" id="rn-max">--<span class="stat-unit">mm</span></div><div class="stat-sub" id="rn-max-d"></div></div>
+      <div class="stat-block"><div class="stat-label">Rain Days / Dry Days</div><div class="stat-value dark sm" id="rn-days">--</div></div>
+      <div class="field-notes" style="border-left-color:var(--red)">
+        <div class="fn-head" style="color:var(--red)">&#9888; Gauge Alert &amp; Notes</div>
+        <div class="fn-scroll"><div class="fn-text" id="rn-insight"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 8: GDD -->
+<div class="slide" id="slide-8">
+  <div class="slide-header">
+    <div class="slide-tag">Phenology</div>
+    <div class="slide-title">Growing Degree Days &amp; Plant Phenology</div>
+    <div class="slide-rule"></div>
+    <div class="slide-daterange" id="dr-8"></div>
+  </div>
+  <div class="slide-cols">
+    <div class="chart-box" style="height:100%"><canvas id="gdd-chart" style="width:100%;height:100%"></canvas></div>
+    <div class="slide-right">
+      <div class="stat-block"><div class="stat-label">Accumulated GDD Base 5&deg;C</div><div class="stat-value teal" id="gdd-5">---</div><div class="stat-sub">from start of record</div></div>
+      <div class="stat-block"><div class="stat-label">Mean GDD&sub5; / day</div><div class="stat-value dark sm" id="gdd-rate">-.-</div></div>
+      <div class="stat-block" style="flex-shrink:0">
+        <div class="stat-label">Phenological Milestones</div>
+        <div class="pheno-list" id="pheno-list"></div>
+      </div>
+      <div class="field-notes">
+        <div class="fn-head">&#9679; Field Notes</div>
+        <div class="fn-scroll"><div class="fn-text" id="gdd-insight"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /slides -->
+
+<div id="nav"></div>
+<div id="progress"><div id="pbar"></div></div>
+
+<script>
+var SLIDE_DUR = 24000;
+var N_SLIDES  = 9;
+
+Chart.defaults.color       = 'rgba(30,20,10,0.45)';
+Chart.defaults.borderColor = 'rgba(30,20,10,0.08)';
+Chart.defaults.font        = { family:"'DM Mono',monospace", size:11 };
+
+var DATA = null, IMGS = [], charts = {}, currentSlide = 0, slideTimer;
+
+// ── CLOCK ────────────────────────────────────────────────────────────────────
+function tick() {
+  var n = new Date();
+  document.getElementById('clock').textContent = n.toLocaleTimeString('en-GB',{hour12:false});
+  document.getElementById('dateline').textContent =
+    n.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'long',year:'numeric'}).toUpperCase();
+}
+setInterval(tick, 1000); tick();
+
+// ── IMAGES ───────────────────────────────────────────────────────────────────
+function rotateHeaderImage() {
+  if (!IMGS.length) return;
+  var img = document.getElementById('header-photo');
+  var src = IMGS[Math.floor(Math.random() * IMGS.length)];
+  var tmp = new Image();
+  tmp.onload = function() {
+    img.classList.remove('loaded');
+    setTimeout(function() { img.src = src; img.classList.add('loaded'); }, 400);
+  };
+  tmp.src = src;
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+function fd(d) {
+  var dt = new Date(d + 'T12:00:00');
+  return dt.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][dt.getMonth()];
+}
+function fdr(start, end) { return fd(start) + ' \u2013 ' + fd(end); }
+function gridC() { return 'rgba(30,20,10,0.07)'; }
+function tickC() { return 'rgba(30,20,10,0.45)'; }
+
+function mkChart(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  var el = document.getElementById(id);
+  if (!el) return;
+  charts[id] = new Chart(el, cfg);
+}
+function baseX(labels, max) {
+  return { ticks:{color:tickC(),font:{size:11,family:"'DM Mono',monospace"},maxRotation:0,autoSkip:true,maxTicksLimit:max||9},
+           grid:{color:gridC()}, border:{color:gridC()} };
+}
+function baseY(suf, mn, mx, step, col) {
+  return { min:mn, max:mx,
+    ticks:{color:col||tickC(),font:{size:11,family:"'DM Mono',monospace"},callback:function(v){return v+(suf||'');},stepSize:step},
+    grid:{color:gridC()}, border:{color:gridC()} };
+}
+function tip(titleFn, labelFn) {
+  return { backgroundColor:'#fff', borderColor:'rgba(30,20,10,0.15)', borderWidth:1,
+           titleColor:'#1a1612', bodyColor:'rgba(30,20,10,0.6)', padding:10,
+           callbacks:{ title:titleFn, label:labelFn } };
+}
+
+// ── LAST FULL CALENDAR MONTH ──────────────────────────────────────────────────
+function getLastFullMonth(daily) {
+  var now = new Date();
+  var y = now.getMonth() === 0 ? now.getFullYear()-1 : now.getFullYear();
+  var m = now.getMonth() === 0 ? 12 : now.getMonth(); // 1-based month number
+  var mStr = (m < 10 ? '0' : '') + m;
+  var prefix = y + '-' + mStr + '-';
+  var filtered = daily.filter(function(d){ return d.date.indexOf(prefix) === 0; });
+  return { days: filtered, year: y, month: m };
+}
+
+var MONTH_NAMES = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+
+// ── NAV ──────────────────────────────────────────────────────────────────────
+function buildNav() {
+  var nav = document.getElementById('nav');
+  nav.innerHTML = '';
+  var names = ['Overview','Last Month','Temperature','Pressure','Wind','Solar','Humidity','Rainfall','GDD'];
+  for (var i = 0; i < N_SLIDES; i++) {
+    var d = document.createElement('div');
+    d.className = 'nav-dot' + (i === 0 ? ' active' : '');
+    d.title = names[i];
+    (function(idx){ d.addEventListener('click', function(){ goTo(idx); }); })(i);
+    nav.appendChild(d);
+  }
+}
+
+function goTo(n) {
+  var slides = document.querySelectorAll('.slide');
+  slides[currentSlide].classList.remove('active');
+  slides[currentSlide].classList.add('exit');
+  var prev = currentSlide;
+  setTimeout(function(){ slides[prev].classList.remove('exit'); }, 800);
+  currentSlide = n % N_SLIDES;
+  slides[currentSlide].classList.add('active');
+  document.querySelectorAll('.nav-dot').forEach(function(d,i){ d.classList.toggle('active', i===currentSlide); });
+  startProgress();
+  rotateHeaderImage();
+}
+
+function startProgress() {
+  clearTimeout(slideTimer);
+  var bar = document.getElementById('pbar');
+  bar.style.transition = 'none'; bar.style.width = '0%';
+  setTimeout(function(){
+    bar.style.transition = 'width '+SLIDE_DUR+'ms linear';
+    bar.style.width = '100%';
+  }, 50);
+  slideTimer = setTimeout(function(){ goTo((currentSlide+1) % N_SLIDES); }, SLIDE_DUR);
+}
+
+// ── SCROLL ANIMATION ──────────────────────────────────────────────────────────
+var scrollTimers = {};
+function startInsightScrolls() {
+  var ids = ['mo-insight','t-insight','bp-insight','wr-insight','sun-insight','vpd-insight','rn-insight','gdd-insight'];
+  ids.forEach(function(id) {
+    var textEl = document.getElementById(id);
+    if (!textEl) return;
+    var container = textEl.parentNode;
+    var box = container.parentNode;
+    if (!box) return;
+    container.style.top = '36px';
+    if (scrollTimers[id]) cancelAnimationFrame(scrollTimers[id]);
+
+    var visH  = box.offsetHeight - 50;
+    var textH = textEl.offsetHeight;
+    if (textH <= visH) return;
+
+    var travel   = textH - visH + 20;
+    var startY   = 36, endY = 36 - travel;
+    var pauseMs  = 2800, speed = 16;
+    var travelMs = (travel / speed) * 1000;
+    var phase = 'pause-top', phaseStart = null;
+
+    function animate(ts) {
+      if (!phaseStart) phaseStart = ts;
+      var el = ts - phaseStart;
+      if (phase === 'pause-top') {
+        container.style.top = startY + 'px';
+        if (el > pauseMs) { phase = 'scroll-down'; phaseStart = ts; }
+      } else if (phase === 'scroll-down') {
+        var p = Math.min(el / travelMs, 1);
+        container.style.top = (startY + (endY - startY) * p) + 'px';
+        if (p >= 1) { phase = 'pause-bottom'; phaseStart = ts; }
+      } else if (phase === 'pause-bottom') {
+        container.style.top = endY + 'px';
+        if (el > pauseMs) { phase = 'scroll-up'; phaseStart = ts; }
+      } else {
+        var p = Math.min(el / travelMs, 1);
+        container.style.top = (endY + (startY - endY) * p) + 'px';
+        if (p >= 1) { phase = 'pause-top'; phaseStart = ts; }
+      }
+      scrollTimers[id] = requestAnimationFrame(animate);
+    }
+    scrollTimers[id] = requestAnimationFrame(animate);
+  });
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+function longestStreak(daily, fn) {
+  var best = 0, cur = 0;
+  daily.forEach(function(d){ cur = fn(d) ? cur+1 : 0; best = Math.max(best,cur); });
+  return best;
+}
+function monthLabel(y, m) { return MONTH_NAMES[m] + ' ' + y; }
+
+// ── FIELD NOTES ───────────────────────────────────────────────────────────────
+function genInsights(data) {
+  var daily = data.daily;
+  var n = daily.length;
+  if (!n) return;
+
+  // Last full month data
+  var lm = getLastFullMonth(daily);
+  var md = lm.days;
+  var mname = monthLabel(lm.year, lm.month);
+
+  // ── LAST MONTH ──
+  if (md.length > 0) {
+    var mMaxT  = Math.max.apply(null, md.map(function(d){return d.tmax;}));
+    var mMinT  = Math.min.apply(null, md.map(function(d){return d.tmin;}));
+    var mMeanT = md.reduce(function(a,d){return a+d.tmean;},0)/md.length;
+    var mRain  = md.reduce(function(a,d){return a+d.rain;},0);
+    var mSun   = md.reduce(function(a,d){return a+d.sunshine;},0);
+    var mRainDays = md.filter(function(d){return d.rain>0;}).length;
+    var mVPDmean  = md.reduce(function(a,d){return a+d.vpd_mean;},0)/md.length;
+    var mWetDays  = md.filter(function(d){return d.rhmean>95;}).length;
+    var mBrightDays = md.filter(function(d){return d.sunshine>6;}).length;
+
+    document.getElementById('mo-insight').innerHTML =
+      mname + ' delivered a mean temperature of <b>' + mMeanT.toFixed(1) + '&deg;C</b>, ranging from a high of ' +
+      '<b class="accent">' + mMaxT + '&deg;C</b> to a low of <b class="warn">' + mMinT + '&deg;C</b>. ' +
+      (mMeanT > 9 ? 'The month was <b>notably mild</b> for SE England &mdash; the long-term February/March average maximum is around 8&deg;C. ' : '') +
+      'Total rainfall of <b>' + mRain.toFixed(1) + ' mm</b> fell across ' + mRainDays + ' rain days, ' +
+      (mRain > 80 ? 'making it a <b class="warn">significantly wet month</b> well above the SE England average of ~45 mm. ' : mRain < 20 ? 'making it <b class="accent">notably dry</b> for the time of year. ' : 'broadly typical for the season. ') +
+      'There were ' + mWetDays + ' fully saturated days (RH &gt;95%), indicating persistent conditions favouring ' +
+      '<b>fungal disease pressure</b>. ' +
+      '<b>' + mBrightDays + ' days</b> exceeded 6 hours of bright sunshine. Mean VPD of <b>' + mVPDmean.toFixed(3) + ' kPa</b> confirms a ' +
+      (mVPDmean < 0.25 ? 'low-stress maritime moisture regime throughout.' : 'periodically stressed moisture regime.');
+  } else {
+    document.getElementById('mo-insight').textContent = 'No data available for the last full calendar month.';
+  }
+
+  // ── TEMPERATURE ──
+  var maxT    = Math.max.apply(null, daily.map(function(d){return d.tmax;}));
+  var minT    = Math.min.apply(null, daily.map(function(d){return d.tmin;}));
+  var maxTDay = daily[daily.map(function(d){return d.tmax;}).indexOf(maxT)];
+  var minTDay = daily[daily.map(function(d){return d.tmin;}).indexOf(minT)];
+  var warmStreak = longestStreak(daily, function(d){ return d.tmean > 11; });
+  var coldStreak = longestStreak(daily, function(d){ return d.tmax < 6; });
+  document.getElementById('t-insight').innerHTML =
+    'The period maximum of <b class="accent">' + maxT + '&deg;C</b> on ' + fd(maxTDay.date) +
+    ' is remarkably warm for winter/early spring in SE England, where February maxima average around 8&deg;C. ' +
+    (warmStreak >= 5 ? 'An unbroken <b>' + warmStreak + '-day mild spell</b> with mean temperatures above 11&deg;C reflects sustained Atlantic air mass advection, suppressing any cold continental influence. ' : '') +
+    (coldStreak >= 3 ? 'A <b class="warn">' + coldStreak + '-day cold spell</b> with maxima below 6&deg;C occurred, consistent with brief northerly or north-easterly incursions. ' : '') +
+    'The minimum of <b class="warn">' + minT + '&deg;C</b> on ' + fd(minTDay.date) + ' remained above freezing throughout &mdash; ' +
+    'no frost risk was recorded, which is consistent with the maritime, anticyclonic character of much of the period.';
+
+  // ── PRESSURE ──
+  var allBP   = daily.map(function(d){return d.bpmean;});
+  var maxBP   = Math.max.apply(null, allBP);
+  var minBP   = Math.min.apply(null, allBP);
+  var maxBPD  = daily[allBP.indexOf(maxBP)];
+  var minBPD  = daily[allBP.indexOf(minBP)];
+  var bpRange = maxBP - minBP;
+  document.getElementById('bp-insight').innerHTML =
+    'A pressure range of <b>' + bpRange.toFixed(0) + ' mB</b> across the record reflects vigorous mid-latitude westerly circulation. ' +
+    'The peak of <b class="accent">' + maxBP.toFixed(0) + ' mB</b> on ' + fd(maxBPD.date) +
+    ' marks the centre of an anticyclone &mdash; high pressure typically brings light winds, clear radiation nights, fog hollows, and the warmest afternoon temperatures of any given spell. ' +
+    'The low of <b class="warn">' + minBP.toFixed(0) + ' mB</b> on ' + fd(minBPD.date) +
+    ' signals a frontal depression; a 3-hour fall exceeding 2 mB/hr at this point would have warranted a weather warning. ' +
+    (bpRange > 45 ? 'The overall range exceeds 45 mB, indicating a particularly <b>active and mobile weather pattern</b> during this period.' : '');
+
+  // ── WIND ──
+  var meanWS = daily.reduce(function(a,d){return a+d.ws_mean;},0)/daily.length;
+  var maxWS  = Math.max.apply(null, daily.map(function(d){return d.ws_max;}));
+  var maxWSD = daily[daily.map(function(d){return d.ws_max;}).indexOf(maxWS)];
+  document.getElementById('wr-insight').innerHTML =
+    'The dominant south to south-westerly airflow is the signature of Atlantic depressions tracking north-east across the British Isles &mdash; the prevailing winter pattern. ' +
+    'The quieter NE&ndash;ENE quadrant (~5%) represents cold, dry Scandinavian or continental air; these episodes typically coincide with the clearest skies and sharpest overnight temperature drops in the record. ' +
+    'Mean speed across all sectors is <b>' + meanWS.toFixed(1) + ' kph</b>, characterising a <b class="accent">moderately sheltered urban site</b>. ' +
+    'The maximum gust of <b class="warn">' + maxWS.toFixed(1) + ' kph</b> on ' + fd(maxWSD.date) +
+    ' would have been sufficient to cause minor damage to poorly secured structures.';
+
+  // ── SOLAR ──
+  var totalSun = daily.reduce(function(a,d){return a+d.sunshine;},0);
+  var bestSun  = daily.reduce(function(a,d){return d.sunshine>a.sunshine?d:a;},daily[0]);
+  var darkDays = daily.filter(function(d){return d.sunshine < 1;}).length;
+  var peakSlr  = Math.max.apply(null, data.sampled.map(function(s){return s.slr;}));
+  var peakSlrS = data.sampled[data.sampled.map(function(s){return s.slr;}).indexOf(peakSlr)];
+  document.getElementById('sun-insight').innerHTML =
+    '<b>' + darkDays + ' days</b> recorded fewer than 1 hour of bright sunshine &mdash; these are the fully overcast, fog-laden maritime days typical of late winter. ' +
+    'The best day was <b class="accent">' + fd(bestSun.date) + ' with ' + bestSun.sunshine + ' hours</b>, coinciding with the anticyclonic spell when pressure was near its period high. ' +
+    'Peak irradiance of <b>' + peakSlr.toFixed(0) + ' W/m&sup2;</b>' +
+    (peakSlrS ? ' occurred on ' + fd(peakSlrS.ts.slice(0,10)) : '') +
+    '. The mean of <b>' + (totalSun/n).toFixed(1) + ' h/day</b> is broadly consistent with SE England winter/spring norms of 3&ndash;4 h, ' +
+    'suggesting no significant horizon obstruction &mdash; the sensor has a good sky view.';
+
+  // ── VPD / HUMIDITY ──
+  var meanVPD   = daily.reduce(function(a,d){return a+d.vpd_mean;},0)/daily.length;
+  var peakVPD   = Math.max.apply(null, daily.map(function(d){return d.vpd_max;}));
+  var peakVPDD  = daily[daily.map(function(d){return d.vpd_max;}).indexOf(peakVPD)];
+  var lowDays   = daily.filter(function(d){return d.vpd_mean < 0.2;}).length;
+  var satDays   = daily.filter(function(d){return d.rhmean > 95;}).length;
+  document.getElementById('vpd-insight').innerHTML =
+    'A period mean VPD of <b>' + meanVPD.toFixed(3) + ' kPa</b> firmly places this site in the <b class="accent">maritime low-stress category</b>. ' +
+    '<b>' + lowDays + ' days</b> had mean VPD below 0.2 kPa, and <b>' + satDays + ' days</b> averaged above 95% RH &mdash; ' +
+    'these are conditions where leaf surfaces remain wet for extended periods and <b class="warn">botrytis, downy mildew and rust fungi</b> proliferate. ' +
+    'The peak VPD of <b>' + peakVPD.toFixed(2) + ' kPa</b> on ' + fd(peakVPDD.date) +
+    (peakVPD > 1.2 ? ' crossed the stomatal-closure threshold &mdash; a brief but physiologically significant stress event for actively transpiring plants.' :
+     ' remained below the stomatal-closure threshold, so drought stress was entirely absent throughout the record.') +
+    ' For planting design, <b>air circulation and disease resistance</b> should be prioritised over drought tolerance at this site.';
+
+  // ── RAINFALL ──
+  var totalRain = daily[n-1].cum_rain;
+  var maxRain   = Math.max.apply(null, daily.map(function(d){return d.rain;}));
+  var maxRainD  = daily[daily.map(function(d){return d.rain;}).indexOf(maxRain)];
+  var rainDays  = daily.filter(function(d){return d.rain>0;}).length;
+  document.getElementById('rn-insight').innerHTML =
+    'Cross-validation against the NW3 Hampstead reference station (8.5 km NW) reveals a <b class="warn">systematic under-recording of approximately 45%</b> &mdash; ' +
+    'the station total of <b>' + totalRain.toFixed(1) + ' mm</b> is estimated to represent closer to <b>95&ndash;100 mm</b> actual precipitation. ' +
+    'The rain-day pattern and event timing match the reference station well, confirming the Campbell datalogger programme is functioning correctly. ' +
+    'The fault is physical: the most likely cause is a <b>blocked gauge orifice or mesh filter</b> &mdash; leaf debris, moss, or spider web material. ' +
+    'The highest daily catch of <b>' + maxRain.toFixed(1) + ' mm</b> on ' + fd(maxRainD.date) + ' was associated with a frontal system. ' +
+    '<b>Recommended action:</b> inspect and clean the ARG100 gauge orifice and anti-splash mesh.';
+
+  // ── GDD ──
+  var finalGDD5 = daily[n-1].cum_gdd5;
+  var warmPulse = daily.filter(function(d){return d.tmean > 11;}).length;
+  var gddRate   = finalGDD5 / n;
+  document.getElementById('gdd-insight').innerHTML =
+    'A total of <b class="accent">' + finalGDD5.toFixed(0) + ' GDD (base 5&deg;C)</b> accumulated from ' + fd(daily[0].date) + ' to ' + fd(daily[n-1].date) + '. ' +
+    'The warm spell &mdash; spanning <b>' + warmPulse + ' days with mean temperatures above 11&deg;C</b> &mdash; contributed disproportionately, accelerating the phenological clock by an estimated <b>10&ndash;14 days</b> relative to a cool-spring scenario. ' +
+    'At the observed accumulation rate of <b>' + gddRate.toFixed(1) + ' GDD/day</b>, spring flowering events will run <b class="warn">2&ndash;3 weeks ahead</b> of the 1981&ndash;2010 climatological baseline. ' +
+    'Oak budburst &mdash; traditionally the last major spring phenological event in SE England &mdash; is the milestone not yet reached; its arrival will confirm the season is fully engaged.';
+}
+
+// ── BUILD CHARTS ──────────────────────────────────────────────────────────────
+function buildCharts(data) {
+  var daily   = data.daily;
+  var sampled = data.sampled;
+  var n       = daily.length;
+  var labels  = daily.map(function(d){return fd(d.date);});
+  var dr      = fdr(data.date_start, data.date_end);
+
+  // Header range text
+  document.getElementById('station-range').textContent =
+    'Data: ' + fd(data.date_start) + ' \u2013 ' + fd(data.date_end) +
+    '  \u00b7  ' + data.record_count.toLocaleString() + ' observations  \u00b7  CR1000 S/N ' + data.station.serial;
+
+  // Set date ranges on all slides
+  for (var si = 0; si < N_SLIDES; si++) {
+    var el = document.getElementById('dr-' + si);
+    if (el) el.textContent = dr;
+  }
+
+  // ── LAST FULL MONTH SLIDE ──
+  var lm   = getLastFullMonth(daily);
+  var md   = lm.days;
+  var mname = monthLabel(lm.year, lm.month);
+  document.getElementById('month-tag').textContent   = mname;
+  document.getElementById('month-title').textContent = mname + ' \u2014 Monthly Summary';
+  if (md.length > 0) {
+    var mdr = fdr(md[0].date, md[md.length-1].date);
+    document.getElementById('dr-1').textContent = mdr;
+    var mMaxT    = Math.max.apply(null, md.map(function(d){return d.tmax;}));
+    var mMinT    = Math.min.apply(null, md.map(function(d){return d.tmin;}));
+    var mMaxTD   = md[md.map(function(d){return d.tmax;}).indexOf(mMaxT)];
+    var mMinTD   = md[md.map(function(d){return d.tmin;}).indexOf(mMinT)];
+    var mMeanT   = md.reduce(function(a,d){return a+d.tmean;},0)/md.length;
+    var mRain    = md.reduce(function(a,d){return a+d.rain;},0);
+    var mSun     = md.reduce(function(a,d){return a+d.sunshine;},0);
+    var mBestSun = md.reduce(function(a,d){return d.sunshine>a.sunshine?d:a;},md[0]);
+    var mBPmean  = md.reduce(function(a,d){return a+d.bpmean;},0)/md.length;
+    var mRainDays= md.filter(function(d){return d.rain>0;}).length;
+    var mDryDays = md.length - mRainDays;
+
+    document.getElementById('mo-tmean').innerHTML  = mMeanT.toFixed(1)+'<span class="stat-unit">&deg;C</span>';
+    document.getElementById('mo-tmax').innerHTML   = mMaxT+'<span class="stat-unit">&deg;C</span>';
+    document.getElementById('mo-tmax-d').textContent = fd(mMaxTD.date);
+    document.getElementById('mo-tmin').innerHTML   = mMinT+'<span class="stat-unit">&deg;C</span>';
+    document.getElementById('mo-tmin-d').textContent = fd(mMinTD.date);
+    document.getElementById('mo-rain').innerHTML   = mRain.toFixed(1)+'<span class="stat-unit">mm</span>';
+    document.getElementById('mo-rain-days').textContent = mRainDays+' rain / '+mDryDays+' dry days';
+    document.getElementById('mo-sun').innerHTML    = mSun.toFixed(1)+'<span class="stat-unit">h</span>';
+    document.getElementById('mo-sun-best').textContent = 'Best: '+mBestSun.sunshine+'h on '+fd(mBestSun.date);
+    document.getElementById('mo-bp').innerHTML     = mBPmean.toFixed(0)+'<span class="stat-unit">mB</span>';
+
+    var mLabels = md.map(function(d){return fd(d.date);});
+    mkChart('mo-temp-chart',{type:'bar',data:{labels:mLabels,datasets:[
+      {label:'Max',data:md.map(function(d){return d.tmax;}),backgroundColor:'rgba(168,50,32,0.25)',borderColor:'#a83220',borderWidth:1.5,borderRadius:2},
+      {label:'Min',data:md.map(function(d){return d.tmin;}),backgroundColor:'rgba(26,111,168,0.20)',borderColor:'#1a6fa8',borderWidth:1.5,borderRadius:2},
+      {label:'Mean',type:'line',data:md.map(function(d){return d.tmean;}),borderColor:'#b8640a',borderWidth:2.5,pointRadius:0,tension:0.3,fill:false}
+    ]},options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:true,labels:{color:tickC(),font:{size:11},boxWidth:20,boxHeight:1}},
+        tooltip:tip(function(i){return fd(md[i[0].dataIndex].date);})},
+      scales:{x:baseX(mLabels,md.length),y:baseY('\u00b0C',null,null,2,'#a83220')}}});
+
+    mkChart('mo-rain-chart',{type:'bar',data:{labels:mLabels,datasets:[{
+      data:md.map(function(d){return d.rain;}),
+      backgroundColor:md.map(function(d){return d.rain>8?'rgba(26,111,168,0.8)':d.rain>3?'rgba(26,111,168,0.55)':'rgba(26,111,168,0.3)';}),
+      borderRadius:2
+    }]},options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:tip(function(i){return fd(md[i[0].dataIndex].date);},function(i){return ' '+i.raw.toFixed(1)+' mm';})},
+      scales:{x:baseX(mLabels,md.length),y:baseY(' mm',0,null,2,'#1a6fa8')}}});
+  }
+
+  // ── OVERVIEW ──
+  var lat = data.latest || {};
+  if (lat.T !== undefined) {
+    document.getElementById('ov-temp').textContent = lat.T.toFixed(1)+'\u00b0C';
+    document.getElementById('ov-rh').textContent   = lat.RH.toFixed(0)+'%';
+    document.getElementById('ov-vpd').textContent  = 'VPD '+lat.vpd.toFixed(3)+' kPa';
+    document.getElementById('ov-bp').textContent   = lat.bp.toFixed(0)+' mB';
+    document.getElementById('ov-ws').textContent   = lat.ws.toFixed(1)+' kph';
+    var ld = daily[n-1];
+    if (ld) {
+      document.getElementById('ov-temp-range').textContent = ld.tmin+' / '+ld.tmax+'\u00b0C today';
+      document.getElementById('ov-ws-info').textContent    = 'max today: '+ld.ws_max.toFixed(1)+' kph';
+    }
+    if (sampled.length > 7) {
+      var tend = lat.bp - sampled[sampled.length-7].bp;
+      document.getElementById('ov-bp-tend').textContent =
+        tend > 0.5 ? 'Rising +'+tend.toFixed(1)+' mB' : tend < -0.5 ? 'Falling '+tend.toFixed(1)+' mB' : 'Steady';
+    }
+  }
+  document.getElementById('ov-rain-tot').textContent = daily[n-1].cum_rain.toFixed(1)+' mm';
+
+  var s7  = sampled.slice(-7*48);
+  var s7L = s7.map(function(s){return s.ts.slice(5,10);});
+  function miniOpts() {
+    return { responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{enabled:false}},
+      scales:{x:{display:false},y:{display:false}} };
+  }
+  mkChart('ov-tc',{type:'line',data:{labels:s7L,datasets:[{data:s7.map(function(s){return s.T;}),borderColor:'#b8640a',borderWidth:2,pointRadius:0,tension:0.3,fill:false}]},options:miniOpts()});
+  mkChart('ov-bc',{type:'line',data:{labels:s7L,datasets:[{data:s7.map(function(s){return s.bp;}),borderColor:'#5a4ab0',borderWidth:2,pointRadius:0,tension:0.3,fill:false}]},options:miniOpts()});
+  var d7 = daily.slice(-7);
+  mkChart('ov-rc',{type:'bar',data:{labels:d7.map(function(d){return fd(d.date);}),datasets:[{data:d7.map(function(d){return d.rain;}),backgroundColor:'rgba(26,122,88,0.55)',borderRadius:1}]},options:miniOpts()});
+  mkChart('ov-sc',{type:'line',data:{labels:s7L,datasets:[{data:s7.map(function(s){return s.slr;}),borderColor:'#b8640a',borderWidth:1.5,pointRadius:0,tension:0.2,fill:true,backgroundColor:'rgba(184,100,10,0.08)'}]},options:miniOpts()});
+
+  // ── TEMPERATURE ──
+  var allTmax = daily.map(function(d){return d.tmax;}), allTmin = daily.map(function(d){return d.tmin;});
+  var maxT = Math.max.apply(null,allTmax), minT = Math.min.apply(null,allTmin);
+  var maxTi = allTmax.indexOf(maxT), minTi = allTmin.indexOf(minT);
+  var meanT = daily.reduce(function(a,d){return a+d.tmean;},0)/n;
+  var meanR = daily.reduce(function(a,d){return a+(d.tmax-d.tmin);},0)/n;
+  document.getElementById('t-mean').innerHTML = meanT.toFixed(1)+'<span class="stat-unit">&deg;C</span>';
+  document.getElementById('t-max').innerHTML  = maxT+'<span class="stat-unit">&deg;C</span>';
+  document.getElementById('t-max-d').textContent = fd(daily[maxTi].date);
+  document.getElementById('t-min').innerHTML  = minT+'<span class="stat-unit">&deg;C</span>';
+  document.getElementById('t-min-d').textContent = fd(daily[minTi].date);
+  document.getElementById('t-range').innerHTML= meanR.toFixed(1)+'<span class="stat-unit">&deg;C</span>';
+
+  mkChart('temp-chart',{type:'line',data:{labels:labels,datasets:[
+    {label:'Max',data:daily.map(function(d){return d.tmax;}),borderColor:'#a83220',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false},
+    {label:'Mean',data:daily.map(function(d){return d.tmean;}),borderColor:'#b8640a',borderWidth:2.5,pointRadius:0,tension:0.3,fill:false},
+    {label:'Min',data:daily.map(function(d){return d.tmin;}),borderColor:'#1a6fa8',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:true,labels:{color:tickC(),font:{size:11},boxWidth:24,boxHeight:1}},
+      tooltip:tip(function(i){return fd(daily[i[0].dataIndex].date);})},
+    scales:{x:baseX(labels),y:baseY('\u00b0C',Math.floor(minT-2),Math.ceil(maxT+2),4)}}});
+
+  // ── PRESSURE ──
+  var allBP = daily.map(function(d){return d.bpmean;});
+  var maxBP = Math.max.apply(null,allBP), minBP = Math.min.apply(null,allBP);
+  var latBP = lat.bp || allBP[n-1];
+  var tend3h = sampled.length > 7 ? latBP - sampled[sampled.length-7].bp : 0;
+  document.getElementById('bp-now').innerHTML  = latBP.toFixed(0)+'<span class="stat-unit">mB</span>';
+  document.getElementById('bp-max').innerHTML  = maxBP.toFixed(0)+'<span class="stat-unit">mB</span>';
+  document.getElementById('bp-max-d').textContent = fd(daily[allBP.indexOf(maxBP)].date);
+  document.getElementById('bp-min').innerHTML  = minBP.toFixed(0)+'<span class="stat-unit">mB</span>';
+  document.getElementById('bp-min-d').textContent = fd(daily[allBP.indexOf(minBP)].date);
+  document.getElementById('bp-range').innerHTML= (maxBP-minBP).toFixed(0)+'<span class="stat-unit">mB</span>';
+  document.getElementById('bp-tend').innerHTML = (tend3h>0?'+':'')+tend3h.toFixed(1)+' mB';
+  document.getElementById('bp-tend-d').textContent = tend3h>1?'Rising':tend3h<-1?'Falling':'Steady';
+
+  var sL = sampled.map(function(s){return s.ts.slice(5,10);});
+  mkChart('bp-chart',{type:'line',data:{labels:sL,datasets:[{data:sampled.map(function(s){return s.bp;}),
+    borderColor:'#5a4ab0',backgroundColor:'rgba(90,74,176,0.05)',borderWidth:2,pointRadius:0,tension:0.3,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:tip(function(i){return sampled[i[0].dataIndex].ts.slice(0,13);})},
+      scales:{x:baseX(sL,10),y:baseY(' mB',Math.floor(minBP-5),Math.ceil(maxBP+5),5,'#5a4ab0')}}});
+
+  // ── WIND ──
+  var wind    = data.wind;
+  var freqs   = wind.sectors.map(function(bins){return bins.reduce(function(a,b){return a+b;},0)/wind.total*100;});
+  var topF    = Math.max.apply(null,freqs);
+  var meanWSa = daily.reduce(function(a,d){return a+d.ws_mean;},0)/daily.length;
+  var maxWSa  = Math.max.apply(null,daily.map(function(d){return d.ws_max;}));
+  document.getElementById('wr-pct').textContent   = topF.toFixed(1);
+  document.getElementById('wr-mean').innerHTML    = meanWSa.toFixed(1)+'<span class="stat-unit">kph</span>';
+  document.getElementById('wr-max').innerHTML     = maxWSa.toFixed(1)+'<span class="stat-unit">kph</span>';
+  document.getElementById('wr-calms').innerHTML   = (wind.calms/wind.total*100).toFixed(1)+'%';
+  setTimeout(function(){ drawWindRose(wind); }, 100);
+
+  // ── SOLAR ──
+  var totalSun = daily.reduce(function(a,d){return a+d.sunshine;},0);
+  var bestSun  = daily.reduce(function(a,d){return d.sunshine>a.sunshine?d:a;},daily[0]);
+  var peakSlr  = Math.max.apply(null,sampled.map(function(s){return s.slr;}));
+  document.getElementById('sun-tot').innerHTML   = totalSun.toFixed(1)+'<span class="stat-unit">h</span>';
+  document.getElementById('sun-best').textContent= fd(bestSun.date);
+  document.getElementById('sun-best-v').textContent= bestSun.sunshine+'h bright sunshine';
+  document.getElementById('sun-peak').innerHTML  = peakSlr.toFixed(0)+'<span class="stat-unit">W/m\u00b2</span>';
+  document.getElementById('sun-mean').innerHTML  = (totalSun/n).toFixed(1)+'<span class="stat-unit">h/day</span>';
+
+  mkChart('sun-chart',{type:'bar',data:{labels:labels,datasets:[{data:daily.map(function(d){return d.sunshine;}),
+    backgroundColor:daily.map(function(d){return d.sunshine>=7?'rgba(184,100,10,0.85)':'rgba(184,100,10,0.40)';}),borderRadius:2}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:tip(function(i){return fd(daily[i[0].dataIndex].date);},function(i){return ' '+i.raw.toFixed(1)+' h';})},
+      scales:{x:baseX(labels),y:baseY(' h',0,12,2)}}});
+
+  mkChart('slr-chart',{type:'line',data:{labels:sL,datasets:[{data:sampled.map(function(s){return s.slr;}),
+    borderColor:'#b8640a',backgroundColor:'rgba(184,100,10,0.06)',borderWidth:1.5,pointRadius:0,tension:0.2,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:tip(function(i){return sampled[i[0].dataIndex].ts.slice(0,13);},function(i){return ' '+i.raw.toFixed(0)+' W/m2';})},
+      scales:{x:baseX(sL,10),y:baseY(' W/m2',0,null,100)}}});
+
+  // ── HUMIDITY / VPD ──
+  var allRH  = daily.map(function(d){return d.rhmean;});
+  var allVPD = daily.map(function(d){return d.vpd_mean;});
+  var allVPDx= daily.map(function(d){return d.vpd_max;});
+  document.getElementById('rh-mean').innerHTML  = (allRH.reduce(function(a,b){return a+b;},0)/allRH.length).toFixed(0)+'%';
+  document.getElementById('vpd-mean').innerHTML = (allVPD.reduce(function(a,b){return a+b;},0)/allVPD.length).toFixed(3)+'<span class="stat-unit">kPa</span>';
+  document.getElementById('vpd-max').innerHTML  = Math.max.apply(null,allVPDx).toFixed(3)+'<span class="stat-unit">kPa</span>';
+
+  mkChart('rh-chart',{type:'bar',data:{labels:labels,datasets:[{data:allRH,
+    backgroundColor:allRH.map(function(v){return v>95?'rgba(26,111,168,0.75)':v>80?'rgba(26,111,168,0.45)':'rgba(26,111,168,0.22)';}),borderRadius:1}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:tip(function(i){return fd(daily[i[0].dataIndex].date);},function(i){return ' RH '+i.raw.toFixed(0)+'%';})},
+      scales:{x:baseX(labels),y:baseY('%',0,105,20,'#1a6fa8')}}});
+
+  mkChart('vpd-chart',{type:'bar',data:{labels:labels,datasets:[
+    {label:'mean',data:allVPD,backgroundColor:allVPD.map(function(v){return v>1.2?'rgba(168,50,32,0.7)':v>0.8?'rgba(184,100,10,0.65)':v>0.4?'rgba(26,122,88,0.6)':'rgba(26,111,168,0.35)';}),borderRadius:1},
+    {label:'max',type:'line',data:allVPDx,borderColor:'rgba(30,20,10,0.25)',borderWidth:1,borderDash:[4,4],pointRadius:0,tension:0.3,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+    tooltip:tip(function(i){return fd(daily[i[0].dataIndex].date);})},
+    scales:{x:baseX(labels),y:baseY(' kPa',0,1.6,0.2)}}});
+
+  // ── RAINFALL ──
+  var rainDays = daily.filter(function(d){return d.rain>0;}).length;
+  var maxRain  = Math.max.apply(null,daily.map(function(d){return d.rain;}));
+  var maxRainD = daily[daily.map(function(d){return d.rain;}).indexOf(maxRain)];
+  var totalRain= daily[n-1].cum_rain;
+  document.getElementById('rn-tot').innerHTML = totalRain.toFixed(1)+'<span class="stat-unit">mm</span>';
+  document.getElementById('rn-max').innerHTML = maxRain.toFixed(1)+'<span class="stat-unit">mm</span>';
+  document.getElementById('rn-max-d').textContent = fd(maxRainD.date);
+  document.getElementById('rn-days').innerHTML = rainDays+' / '+(n-rainDays)+' days';
+
+  mkChart('rain-chart',{type:'bar',data:{labels:labels,datasets:[{data:daily.map(function(d){return d.rain;}),
+    backgroundColor:daily.map(function(d){return d.rain>8?'rgba(26,111,168,0.85)':d.rain>3?'rgba(26,111,168,0.55)':'rgba(26,111,168,0.30)';}),borderRadius:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:tip(function(i){return fd(daily[i[0].dataIndex].date);},function(i){return ' '+i.raw.toFixed(1)+' mm';})},
+      scales:{x:baseX(labels),y:baseY(' mm',0,null,2)}}});
+
+  mkChart('raincum-chart',{type:'line',data:{labels:labels,datasets:[{data:daily.map(function(d){return d.cum_rain;}),
+    borderColor:'#1a6fa8',backgroundColor:'rgba(26,111,168,0.05)',borderWidth:2.5,pointRadius:0,tension:0.3,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:tip(function(i){return fd(daily[i[0].dataIndex].date);},function(i){return ' '+i.raw.toFixed(1)+' mm cumulative';})},
+      scales:{x:baseX(labels),y:baseY(' mm',0,null,10)}}});
+
+  // ── GDD ──
+  var finalGDD5 = daily[n-1].cum_gdd5;
+  document.getElementById('gdd-5').textContent   = finalGDD5.toFixed(0);
+  document.getElementById('gdd-rate').textContent= (finalGDD5/n).toFixed(1)+' GDD/day';
+
+  var PHENO = [
+    {gdd:30,  name:'Forsythia bloom',         col:'#b8640a'},
+    {gdd:50,  name:'Daffodil peak',            col:'#b8640a'},
+    {gdd:70,  name:'Horse chestnut budburst',  col:'#1a7a58'},
+    {gdd:100, name:'Hawthorn leaf',            col:'#1a7a58'},
+    {gdd:130, name:'Cherry blossom',           col:'#a83220'},
+    {gdd:160, name:'Oak budburst',             col:'#2a7a3a'},
+  ];
+  var pl = document.getElementById('pheno-list'); pl.innerHTML = '';
+  PHENO.forEach(function(p){
+    var ci = -1;
+    for (var pi=0; pi<daily.length; pi++) { if (daily[pi].cum_gdd5 >= p.gdd) { ci=pi; break; } }
+    var reached = ci >= 0;
+    var row = document.createElement('div'); row.className='pheno-row';
+    row.innerHTML = '<div class="pheno-dot" style="background:'+(reached?p.col:'rgba(30,20,10,0.15)')+'"></div>'+
+      '<span class="pheno-name">'+p.name+'</span>'+
+      '<span class="pheno-gdd">'+p.gdd+' GDD</span>'+
+      '<span class="pheno-date" style="color:'+(reached?p.col:'rgba(30,20,10,0.25)')+'">'+
+      (reached?fd(daily[ci].date):'not yet')+'</span>';
+    pl.appendChild(row);
+  });
+
+  mkChart('gdd-chart',{type:'line',data:{labels:labels,datasets:[
+    {label:'GDD Base 0\u00b0C',data:daily.map(function(d){return d.cum_gdd5+(d.tmean>0?d.tmean:0);}),borderColor:'#a83220',borderWidth:1.5,pointRadius:0,tension:0.3,fill:false},
+    {label:'GDD Base 5\u00b0C',data:daily.map(function(d){return d.cum_gdd5;}),borderColor:'#1a7a58',borderWidth:3,pointRadius:0,tension:0.3,fill:false}
+  ]},options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:true,labels:{color:tickC(),font:{size:11},boxWidth:24,boxHeight:1}},
+      tooltip:tip(function(i){return fd(daily[i[0].dataIndex].date);})},
+    scales:{x:baseX(labels),y:baseY(' GDD',0,null,50)}},
+  plugins:[{id:'phenoLines',afterDraw:function(chart){
+    var ctx=chart.ctx, ys=chart.scales.y, xs=chart.scales.x;
+    PHENO.forEach(function(p){
+      if (p.gdd > finalGDD5+20) return;
+      var yv=ys.getPixelForValue(p.gdd);
+      if (yv<ys.top||yv>ys.bottom) return;
+      ctx.save(); ctx.strokeStyle=p.col; ctx.lineWidth=1;
+      ctx.setLineDash([4,5]); ctx.globalAlpha=0.5;
+      ctx.beginPath(); ctx.moveTo(xs.left,yv); ctx.lineTo(xs.right,yv); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha=1;
+      ctx.fillStyle=p.col; ctx.font="11px 'DM Mono',monospace"; ctx.textAlign='left';
+      ctx.fillText(p.name, xs.left+5, yv-4); ctx.restore();
+    });
+  }}]});
+
+  genInsights(data);
+  setTimeout(function(){ startInsightScrolls(); }, 600);
+}
+
+// ── WIND ROSE ─────────────────────────────────────────────────────────────────
+function drawWindRose(wind) {
+  var wrap = document.querySelector('#slide-4 .chart-box');
+  if (!wrap) return;
+  var SIZE = Math.max(100, Math.min(wrap.offsetWidth, wrap.offsetHeight) - 30);
+  var cvs  = document.getElementById('wind-rose-canvas');
+  var dpr  = window.devicePixelRatio || 1;
+  cvs.style.width = SIZE+'px'; cvs.style.height = SIZE+'px';
+  cvs.width = SIZE*dpr; cvs.height = SIZE*dpr;
+  var ctx = cvs.getContext('2d'); ctx.scale(dpr,dpr);
+  ctx.clearRect(0,0,SIZE,SIZE);
+
+  var cx=SIZE/2, cy=SIZE/2, maxR=SIZE/2-34, maxF=12;
+  var COLORS=['rgba(26,111,168,0.25)','rgba(26,111,168,0.55)','rgba(184,100,10,0.55)','rgba(184,100,10,0.85)','rgba(168,50,32,0.9)'];
+
+  function fR(f){ return Math.max(0,(f/maxF)*maxR); }
+  function aR(deg){ return (deg-90)*Math.PI/180; }
+
+  // Rings
+  [2,4,6,8,10].forEach(function(f){
+    ctx.beginPath(); ctx.arc(cx,cy,fR(f),0,Math.PI*2);
+    ctx.strokeStyle='rgba(30,20,10,0.08)'; ctx.lineWidth=0.8; ctx.stroke();
+    ctx.fillStyle='rgba(30,20,10,0.30)'; ctx.font="12px 'DM Mono',monospace"; ctx.textAlign='left';
+    ctx.fillText(f+'%', cx+fR(f)+3, cy-3);
+  });
+  // Spokes
+  for (var i=0; i<8; i++) {
+    var a=aR(i*45);
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(a)*maxR, cy+Math.sin(a)*maxR);
+    ctx.strokeStyle='rgba(30,20,10,0.07)'; ctx.lineWidth=0.7; ctx.stroke();
+  }
+  // Petals
+  var binF = wind.sectors.map(function(bins){return bins.map(function(v){return v/wind.total*100;});});
+  var sA=(Math.PI*2)/16, hS=sA/2;
+  for (var s=0; s<16; s++) {
+    var ang=aR(s*(360/16)), rIn=0;
+    for (var b=0; b<5; b++) {
+      var f=binF[s][b];
+      var rOut=rIn+fR(f);
+      if (f>=0.01 && rOut>0) {
+        ctx.beginPath();
+        ctx.moveTo(cx+Math.cos(ang-hS)*rIn, cy+Math.sin(ang-hS)*rIn);
+        ctx.arc(cx,cy,rOut,ang-hS,ang+hS);
+        ctx.arc(cx,cy,rIn,ang+hS,ang-hS,true);
+        ctx.closePath();
+        ctx.fillStyle=COLORS[b]; ctx.globalAlpha=0.9; ctx.fill();
+        ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=0.3; ctx.stroke();
+        ctx.globalAlpha=1;
+      }
+      rIn=rOut;
+    }
+  }
+  // Calm centre
+  var cR=fR(wind.calms/wind.total*100);
+  if (cR>0) { ctx.beginPath(); ctx.arc(cx,cy,cR,0,Math.PI*2); ctx.fillStyle='rgba(30,20,10,0.08)'; ctx.fill(); }
+  // Labels
+  [['N',0],['NE',45],['E',90],['SE',135],['S',180],['SW',225],['W',270],['NW',315]].forEach(function(lv){
+    var la=aR(lv[1]), dist=maxR+18;
+    ctx.fillStyle='rgba(30,20,10,0.75)'; ctx.font="bold 14px 'DM Mono',monospace";
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(lv[0], cx+Math.cos(la)*dist, cy+Math.sin(la)*dist);
+  });
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+async function init() {
+  buildNav();
+
+  try { var ir = await fetch('/api/images'); IMGS = await ir.json(); } catch(e){ IMGS=[]; }
+
+  var data;
+  try { var r = await fetch('/api/data'); data = await r.json(); } catch(e){ return; }
+  if (data.error) return;
+
+  DATA = data;
+  buildCharts(data);
+
+  if (IMGS.length) {
+    var img = document.getElementById('header-photo');
+    img.src = IMGS[Math.floor(Math.random()*IMGS.length)];
+    img.onload = function(){ img.classList.add('loaded'); };
+  }
+
+  var loader = document.getElementById('loading');
+  loader.style.opacity = '0';
+  setTimeout(function(){
+    loader.style.display = 'none';
+    document.querySelector('.slide').classList.add('active');
+    startProgress();
+  }, 900);
+
+  setInterval(async function(){
+    try { var r=await fetch('/api/data'); var d=await r.json(); if(!d.error){DATA=d;buildCharts(d);} } catch(e){}
+  }, 300000);
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "stockwell-weather-station",
+  "version": "1.0.0",
+  "description": "Stockwell Street Weather Station — live display",
+  "engines": {
+    "node": ">=18"
+  }
+}
